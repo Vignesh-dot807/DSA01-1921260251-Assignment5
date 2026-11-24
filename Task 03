@@ -1,1 +1,180 @@
 task 3.cpp
+code:
+
+#include <iostream>
+#include <vector>
+#include <chrono>
+#include <stdexcept>
+#include <iomanip>
+using namespace std;
+using namespace chrono;
+
+struct Bill {
+    virtual double total() const = 0;
+    virtual ~Bill() = default;
+};
+
+struct OPBill : Bill {
+    double consultation, tests;
+
+    OPBill(double c, double t) : consultation(c), tests(t) {}
+
+    double total() const override {
+        return consultation + tests;
+    }
+};
+
+struct IPBill : Bill {
+    double days, rate, surgery;
+
+    IPBill(double d, double r, double s)
+        : days(d), rate(r), surgery(s) {}
+
+    double total() const override {
+        return days * rate + surgery;
+    }
+};
+
+struct SimpleBill {
+    int type;
+    double a, b, c;
+};
+
+double switchTotal(const SimpleBill& bill) {
+    switch (bill.type) {
+        case 0: return bill.a + bill.b;
+        case 1: return bill.a * bill.b + bill.c;
+        default: return 0;
+    }
+}
+
+volatile double result = 0;
+
+void benchmark(int n) {
+    vector<OPBill> op;
+    vector<IPBill> ip;
+    vector<SimpleBill> simple;
+
+    op.reserve(n);
+    ip.reserve(n);
+    simple.reserve(n);
+
+    for (int i = 0; i < n; ++i) {
+        if (i % 2 == 0) {
+            op.emplace_back(500, 1200);
+            simple.push_back({0, 500, 1200, 0});
+        } else {
+            ip.emplace_back(3, 2500, 40000);
+            simple.push_back({1, 3, 2500, 40000});
+        }
+    }
+
+    vector<const Bill*> bills;
+    bills.reserve(n);
+
+    for (int i = 0; i < n; ++i) {
+        if (i % 2 == 0)
+            bills.push_back(&op[i / 2]);
+        else
+            bills.push_back(&ip[i / 2]);
+    }
+
+    double virtualSum = 0;
+    auto start = steady_clock::now();
+
+    for (const Bill* b : bills)
+        virtualSum += b->total();
+
+    auto end = steady_clock::now();
+    auto virtualTime =
+        duration_cast<milliseconds>(end - start).count();
+
+    double switchSum = 0;
+    start = steady_clock::now();
+
+    for (const auto& b : simple)
+        switchSum += switchTotal(b);
+
+    end = steady_clock::now();
+    auto switchTime =
+        duration_cast<milliseconds>(end - start).count();
+
+    result = virtualSum + switchSum;
+
+    cout << "Bills: " << n << '\n';
+    cout << "Virtual total: " << virtualSum << '\n';
+    cout << "Switch total: " << switchSum << '\n';
+    cout << "Virtual time: " << virtualTime << " ms\n";
+    cout << "Switch time: " << switchTime << " ms\n\n";
+}
+
+bool returnValidate(double value) {
+    return value >= 0;
+}
+
+bool exceptionValidate(double value) {
+    if (value < 0)
+        throw invalid_argument("Invalid bill");
+    return true;
+}
+
+void exceptionBenchmark(int invalidPercent) {
+    const int N = 1000000;
+    int errors = 0;
+
+    auto start = steady_clock::now();
+
+    for (int i = 0; i < N; ++i) {
+        double value =
+            (i % 100 < invalidPercent) ? -1.0 : 100.0;
+
+        if (!returnValidate(value))
+            ++errors;
+    }
+
+    auto end = steady_clock::now();
+    auto returnTime =
+        duration_cast<milliseconds>(end - start).count();
+
+    errors = 0;
+    start = steady_clock::now();
+
+    for (int i = 0; i < N; ++i) {
+        double value =
+            (i % 100 < invalidPercent) ? -1.0 : 100.0;
+
+        try {
+            exceptionValidate(value);
+        }
+        catch (const invalid_argument&) {
+            ++errors;
+        }
+    }
+
+    end = steady_clock::now();
+    auto exceptionTime =
+        duration_cast<milliseconds>(end - start).count();
+
+    cout << "Invalid bills: " << invalidPercent << "%\n";
+    cout << "Return-code time: " << returnTime << " ms\n";
+    cout << "Exception time: " << exceptionTime << " ms\n\n";
+}
+
+int main() {
+    cout << fixed << setprecision(2);
+
+    cout << "VIRTUAL vs SWITCH\n\n";
+
+    benchmark(1000);
+    benchmark(1000000);
+    benchmark(10000000);
+
+    cout << "RETURN CODE vs EXCEPTION\n\n";
+
+    exceptionBenchmark(0);
+    exceptionBenchmark(1);
+    exceptionBenchmark(50);
+
+    cout << "Benchmark completed.\n";
+    return 0;
+}
